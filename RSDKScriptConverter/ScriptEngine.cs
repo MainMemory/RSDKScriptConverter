@@ -1,0 +1,843 @@
+﻿using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace RSDKScriptConverter
+{
+	abstract class ScriptEngine
+	{
+		protected static readonly string[] arithmeticTokens = { "=", "+=", "-=", "++", "--", "*=", "/=", ">>=", "<<=", "&=", "|=", "^=", "%=" };
+		protected static readonly string[] conditionalTokens = { "==", ">", ">=", "<", "<=", "!=" };
+
+		public abstract List<ScriptLine> ReadScript(string filename);
+
+		public abstract void WriteScript(string filename, List<ScriptLine> scriptLines);
+
+		public int FindStringToken(string text, string token, int stopID)
+		{
+			int index = -1;
+			int foundTokenID = 0;
+			do
+			{
+				index = text.IndexOf(token, index + 1);
+			} while (index != -1 && foundTokenID < stopID);
+			return index;
+		}
+	}
+
+	class VarNameList : IEnumerable
+	{
+		readonly Dictionary<string, CommonScrVar> namedict = new Dictionary<string, CommonScrVar>(StringComparer.OrdinalIgnoreCase);
+		readonly Dictionary<CommonScrVar, string> vardict = new Dictionary<CommonScrVar, string>();
+
+		public CommonScrVar this[string name] => namedict[name];
+
+		public string this[CommonScrVar var] => vardict[var];
+
+		public void Add(string name, CommonScrVar var)
+		{
+			namedict.Add(name, var);
+			vardict.Add(var, name);
+		}
+
+		public bool Contains(string name) => namedict.ContainsKey(name);
+
+		public bool Contains(CommonScrVar var) => vardict.ContainsKey(var);
+
+		public bool TryGetValue(string name, out CommonScrVar var) => namedict.TryGetValue(name, out var);
+
+		public bool TryGetValue(CommonScrVar var, out string name) => vardict.TryGetValue(var, out name);
+
+		public IEnumerator GetEnumerator() => namedict.GetEnumerator();
+	}
+
+	class FuncNameList : IEnumerable
+	{
+		readonly Dictionary<string, CommonScrFunc> namedict = new Dictionary<string, CommonScrFunc>(StringComparer.OrdinalIgnoreCase);
+		readonly Dictionary<CommonScrFunc, string> funcdict = new Dictionary<CommonScrFunc, string>();
+
+		public CommonScrFunc this[string name] => namedict[name];
+
+		public string this[CommonScrFunc func] => funcdict[func];
+
+		public void Add(string name, CommonScrFunc func)
+		{
+			namedict.Add(name, func);
+			funcdict.Add(func, name);
+		}
+
+		public bool Contains(string name) => namedict.ContainsKey(name);
+
+		public bool Contains(CommonScrFunc func) => funcdict.ContainsKey(func);
+
+		public bool TryGetValue(string name, out CommonScrFunc func) => namedict.TryGetValue(name, out func);
+
+		public bool TryGetValue(CommonScrFunc func, out string name) => funcdict.TryGetValue(func, out name);
+
+		public IEnumerator GetEnumerator() => namedict.GetEnumerator();
+	}
+
+	class MaybeVarRef
+	{
+		public CommonScrVar? Variable { get; set; }
+		public string Text { get; set; }
+		public MaybeVarRef Index { get; set; }
+
+		public MaybeVarRef(CommonScrVar? var, string text, MaybeVarRef index)
+		{
+			Variable = var;
+			Text = text;
+			Index = index;
+		}
+	}
+
+	abstract class ScriptLine
+	{
+		public string Comment { get; set; }
+	}
+
+	class ScriptLineEmpty : ScriptLine { }
+
+	abstract class ScriptLinePublic : ScriptLine
+	{
+		public bool Public { get; set; }
+	}
+
+	class ScriptLineAlias : ScriptLinePublic
+	{
+		public string Name { get; set; }
+		public MaybeVarRef Value { get; set; }
+
+		public ScriptLineAlias(bool pub, string name, MaybeVarRef value)
+		{
+			Public = pub;
+			Name = name;
+			Value = value;
+		}
+	}
+
+	class ScriptLineValue : ScriptLinePublic
+	{
+		public string Name { get; set; }
+		public string Value { get; set; }
+
+		public ScriptLineValue(bool pub, string name, string value)
+		{
+			Public = pub;
+			Name = name;
+			Value = value;
+		}
+	}
+
+	class ScriptLineTable : ScriptLinePublic
+	{
+		public string Name { get; set; }
+		public string Size { get; set; }
+
+		public ScriptLineTable(bool pub, string name)
+		{
+			Public = pub;
+			Name = name;
+		}
+
+		public ScriptLineTable(bool pub, string name, string size)
+		{
+			Public = pub;
+			Name = name;
+			Size = size;
+		}
+	}
+
+	class ScriptLineTableValues : ScriptLine
+	{
+		public string[] Values { get; set; }
+
+		public ScriptLineTableValues(params string[] values)
+		{
+			Values = values;
+		}
+	}
+
+	class ScriptLineEndTable : ScriptLine { }
+
+	class ScriptLineObjectUpdate : ScriptLine { }
+
+	class ScriptLineObjectPlayerInteraction : ScriptLine { }
+
+	class ScriptLineObjectDraw : ScriptLine { }
+
+	class ScriptLineObjectStartup : ScriptLine { }
+
+	class ScriptLineRSDKDraw : ScriptLine { }
+
+	class ScriptLineRSDKLoad : ScriptLine { }
+
+	class ScriptLineReserveFunction : ScriptLine
+	{
+		public string Name { get; set; }
+
+		public ScriptLineReserveFunction(string name)
+		{
+			Name = name;
+		}
+	}
+
+	class ScriptLineFunction : ScriptLinePublic
+	{
+		public string Name { get; set; }
+
+		public ScriptLineFunction(bool pub, string name)
+		{
+			Public = pub;
+			Name = name;
+		}
+	}
+
+	class ScriptLineEndEvent : ScriptLine { }
+
+	class ScriptLineEndFunction : ScriptLine { }
+
+	class ScriptLinePlatform : ScriptLine
+	{
+		public string Platform { get; set; }
+
+		public ScriptLinePlatform(string platform)
+		{
+			Platform = platform;
+		}
+	}
+
+	class ScriptLineEndPlatform : ScriptLine { }
+
+	class ScriptLineIf : ScriptLine
+	{
+		public string Comparison { get; set; }
+		public MaybeVarRef Left { get; set; }
+		public MaybeVarRef Right { get; set; }
+
+		public ScriptLineIf(string comp, MaybeVarRef left, MaybeVarRef right)
+		{
+			Comparison = comp;
+			Left = left;
+			Right = right;
+		}
+	}
+
+	class ScriptLineWhile : ScriptLine
+	{
+		public string Comparison { get; set; }
+		public MaybeVarRef Left { get; set; }
+		public MaybeVarRef Right { get; set; }
+
+		public ScriptLineWhile(string comp, MaybeVarRef left, MaybeVarRef right)
+		{
+			Comparison = comp;
+			Left = left;
+			Right = right;
+		}
+	}
+
+	class ScriptLineForEach : ScriptLine
+	{
+		public MaybeVarRef Type { get; set; }
+		public MaybeVarRef Destination { get; set; }
+		public string Group { get; set; }
+
+		public ScriptLineForEach(MaybeVarRef type, MaybeVarRef dest, string group)
+		{
+			Type = type;
+			Destination = dest;
+			Group = group;
+		}
+	}
+
+	class ScriptLineSwitch : ScriptLine
+	{
+		public MaybeVarRef Variable { get; set; }
+
+		public ScriptLineSwitch(MaybeVarRef var)
+		{
+			Variable = var;
+		}
+	}
+
+	class ScriptLineCase : ScriptLine
+	{
+		public string Value { get; set; }
+
+		public ScriptLineCase(string value)
+		{
+			Value = value;
+		}
+	}
+
+	class ScriptLineDefault : ScriptLine { }
+
+	class ScriptLineEndSwitch : ScriptLine { }
+
+	class ScriptLineArithmetic : ScriptLine
+	{
+		public string Operator { get; set; }
+		public MaybeVarRef Left { get; set; }
+		public MaybeVarRef Right { get; set; }
+
+		public ScriptLineArithmetic(string op, MaybeVarRef left, MaybeVarRef right)
+		{
+			Operator = op;
+			Left = left;
+			Right = right;
+		}
+	}
+
+	class ScriptLineFunctionCall : ScriptLine
+	{
+		public CommonScrFunc Function { get; set; }
+		public MaybeVarRef[] Arguments { get; set; }
+
+		public ScriptLineFunctionCall(CommonScrFunc func, params MaybeVarRef[] args)
+		{
+			Function = func;
+			Arguments = args;
+		}
+	}
+
+	enum ScriptReadModes { READMODE_NORMAL, READMODE_STRING, READMODE_NAME, READMODE_COMMENTLINE, READMODE_ENDLINE, READMODE_EOF }
+	enum ScriptParseModes
+	{
+		PARSEMODE_SCOPELESS,
+		PARSEMODE_PLATFORMSKIP,
+		PARSEMODE_FUNCTION,
+		PARSEMODE_SWITCHREAD,
+		PARSEMODE_TABLEREAD,
+		PARSEMODE_ERROR = 0xFF
+	}
+
+	enum CommonScrVar
+	{
+		VAR_TEMP0,
+		VAR_TEMP1,
+		VAR_TEMP2,
+		VAR_TEMP3,
+		VAR_TEMP4,
+		VAR_TEMP5,
+		VAR_TEMP6,
+		VAR_TEMP7,
+		VAR_CHECKRESULT,
+		VAR_ARRAYPOS0,
+		VAR_ARRAYPOS1,
+		VAR_ARRAYPOS2,
+		VAR_ARRAYPOS3,
+		VAR_ARRAYPOS4,
+		VAR_ARRAYPOS5,
+		VAR_ARRAYPOS6,
+		VAR_ARRAYPOS7,
+		VAR_GLOBAL,
+		VAR_LOCAL,
+		VAR_OBJECTENTITYPOS,
+		VAR_OBJECTGROUPID,
+		VAR_OBJECTTYPE,
+		VAR_OBJECTPROPERTYVALUE,
+		VAR_OBJECTXPOS,
+		VAR_OBJECTYPOS,
+		VAR_OBJECTIXPOS,
+		VAR_OBJECTIYPOS,
+		VAR_OBJECTXVEL,
+		VAR_OBJECTYVEL,
+		VAR_OBJECTSPEED,
+		VAR_OBJECTSTATE,
+		VAR_OBJECTROTATION,
+		VAR_OBJECTSCALE,
+		VAR_OBJECTPRIORITY,
+		VAR_OBJECTDRAWORDER,
+		VAR_OBJECTDIRECTION,
+		VAR_OBJECTINKEFFECT,
+		VAR_OBJECTALPHA,
+		VAR_OBJECTFRAME,
+		VAR_OBJECTANIMATION,
+		VAR_OBJECTPREVANIMATION,
+		VAR_OBJECTANIMATIONSPEED,
+		VAR_OBJECTANIMATIONTIMER,
+		VAR_OBJECTANGLE,
+		VAR_OBJECTLOOKPOSX,
+		VAR_OBJECTLOOKPOSY,
+		VAR_OBJECTCOLLISIONMODE,
+		VAR_OBJECTCOLLISIONPLANE,
+		VAR_OBJECTCONTROLMODE,
+		VAR_OBJECTCONTROLLOCK,
+		VAR_OBJECTPUSHING,
+		VAR_OBJECTVISIBLE,
+		VAR_OBJECTTILECOLLISIONS,
+		VAR_OBJECTINTERACTION,
+		VAR_OBJECTGRAVITY,
+		VAR_OBJECTUP,
+		VAR_OBJECTDOWN,
+		VAR_OBJECTLEFT,
+		VAR_OBJECTRIGHT,
+		VAR_OBJECTJUMPPRESS,
+		VAR_OBJECTJUMPHOLD,
+		VAR_OBJECTSCROLLTRACKING,
+		VAR_OBJECTFLOORSENSORL,
+		VAR_OBJECTFLOORSENSORC,
+		VAR_OBJECTFLOORSENSORR,
+		VAR_OBJECTFLOORSENSORLC,
+		VAR_OBJECTFLOORSENSORRC,
+		VAR_OBJECTCOLLISIONLEFT,
+		VAR_OBJECTCOLLISIONTOP,
+		VAR_OBJECTCOLLISIONRIGHT,
+		VAR_OBJECTCOLLISIONBOTTOM,
+		VAR_OBJECTOUTOFBOUNDS,
+		VAR_OBJECTSPRITESHEET,
+		VAR_OBJECTVALUE0,
+		VAR_OBJECTVALUE1,
+		VAR_OBJECTVALUE2,
+		VAR_OBJECTVALUE3,
+		VAR_OBJECTVALUE4,
+		VAR_OBJECTVALUE5,
+		VAR_OBJECTVALUE6,
+		VAR_OBJECTVALUE7,
+		VAR_OBJECTVALUE8,
+		VAR_OBJECTVALUE9,
+		VAR_OBJECTVALUE10,
+		VAR_OBJECTVALUE11,
+		VAR_OBJECTVALUE12,
+		VAR_OBJECTVALUE13,
+		VAR_OBJECTVALUE14,
+		VAR_OBJECTVALUE15,
+		VAR_OBJECTVALUE16,
+		VAR_OBJECTVALUE17,
+		VAR_OBJECTVALUE18,
+		VAR_OBJECTVALUE19,
+		VAR_OBJECTVALUE20,
+		VAR_OBJECTVALUE21,
+		VAR_OBJECTVALUE22,
+		VAR_OBJECTVALUE23,
+		VAR_OBJECTVALUE24,
+		VAR_OBJECTVALUE25,
+		VAR_OBJECTVALUE26,
+		VAR_OBJECTVALUE27,
+		VAR_OBJECTVALUE28,
+		VAR_OBJECTVALUE29,
+		VAR_OBJECTVALUE30,
+		VAR_OBJECTVALUE31,
+		VAR_OBJECTVALUE32,
+		VAR_OBJECTVALUE33,
+		VAR_OBJECTVALUE34,
+		VAR_OBJECTVALUE35,
+		VAR_OBJECTVALUE36,
+		VAR_OBJECTVALUE37,
+		VAR_OBJECTVALUE38,
+		VAR_OBJECTVALUE39,
+		VAR_OBJECTVALUE40,
+		VAR_OBJECTVALUE41,
+		VAR_OBJECTVALUE42,
+		VAR_OBJECTVALUE43,
+		VAR_OBJECTVALUE44,
+		VAR_OBJECTVALUE45,
+		VAR_OBJECTVALUE46,
+		VAR_OBJECTVALUE47,
+		VAR_STAGESTATE,
+		VAR_STAGEACTIVELIST,
+		VAR_STAGELISTPOS,
+		VAR_STAGETIMEENABLED,
+		VAR_STAGEMILLISECONDS,
+		VAR_STAGESECONDS,
+		VAR_STAGEMINUTES,
+		VAR_STAGEACTNUM,
+		VAR_STAGEPAUSEENABLED,
+		VAR_STAGELISTSIZE,
+		VAR_STAGENEWXBOUNDARY1,
+		VAR_STAGENEWXBOUNDARY2,
+		VAR_STAGENEWYBOUNDARY1,
+		VAR_STAGENEWYBOUNDARY2,
+		VAR_STAGECURXBOUNDARY1,
+		VAR_STAGECURXBOUNDARY2,
+		VAR_STAGECURYBOUNDARY1,
+		VAR_STAGECURYBOUNDARY2,
+		VAR_STAGEDEFORMATIONDATA0,
+		VAR_STAGEDEFORMATIONDATA1,
+		VAR_STAGEDEFORMATIONDATA2,
+		VAR_STAGEDEFORMATIONDATA3,
+		VAR_STAGEWATERLEVEL,
+		VAR_STAGEACTIVELAYER,
+		VAR_STAGEMIDPOINT,
+		VAR_STAGEPLAYERLISTPOS,
+		VAR_STAGEDEBUGMODE,
+		VAR_STAGEENTITYPOS,
+		VAR_SCREENCAMERAENABLED,
+		VAR_SCREENCAMERATARGET,
+		VAR_SCREENCAMERASTYLE,
+		VAR_SCREENCAMERAX,
+		VAR_SCREENCAMERAY,
+		VAR_SCREENDRAWLISTSIZE,
+		VAR_SCREENXCENTER,
+		VAR_SCREENYCENTER,
+		VAR_SCREENXSIZE,
+		VAR_SCREENYSIZE,
+		VAR_SCREENXOFFSET,
+		VAR_SCREENYOFFSET,
+		VAR_SCREENSHAKEX,
+		VAR_SCREENSHAKEY,
+		VAR_SCREENADJUSTCAMERAY,
+		VAR_TOUCHSCREENDOWN,
+		VAR_TOUCHSCREENXPOS,
+		VAR_TOUCHSCREENYPOS,
+		VAR_MUSICVOLUME,
+		VAR_MUSICCURRENTTRACK,
+		VAR_MUSICPOSITION,
+		VAR_KEYDOWNUP,
+		VAR_KEYDOWNDOWN,
+		VAR_KEYDOWNLEFT,
+		VAR_KEYDOWNRIGHT,
+		VAR_KEYDOWNBUTTONA,
+		VAR_KEYDOWNBUTTONB,
+		VAR_KEYDOWNBUTTONC,
+		VAR_KEYDOWNBUTTONX,
+		VAR_KEYDOWNBUTTONY,
+		VAR_KEYDOWNBUTTONZ,
+		VAR_KEYDOWNBUTTONL,
+		VAR_KEYDOWNBUTTONR,
+		VAR_KEYDOWNSTART,
+		VAR_KEYDOWNSELECT,
+		VAR_KEYPRESSUP,
+		VAR_KEYPRESSDOWN,
+		VAR_KEYPRESSLEFT,
+		VAR_KEYPRESSRIGHT,
+		VAR_KEYPRESSBUTTONA,
+		VAR_KEYPRESSBUTTONB,
+		VAR_KEYPRESSBUTTONC,
+		VAR_KEYPRESSBUTTONX,
+		VAR_KEYPRESSBUTTONY,
+		VAR_KEYPRESSBUTTONZ,
+		VAR_KEYPRESSBUTTONL,
+		VAR_KEYPRESSBUTTONR,
+		VAR_KEYPRESSSTART,
+		VAR_KEYPRESSSELECT,
+		VAR_MENU1SELECTION,
+		VAR_MENU2SELECTION,
+		VAR_TILELAYERXSIZE,
+		VAR_TILELAYERYSIZE,
+		VAR_TILELAYERTYPE,
+		VAR_TILELAYERANGLE,
+		VAR_TILELAYERXPOS,
+		VAR_TILELAYERYPOS,
+		VAR_TILELAYERZPOS,
+		VAR_TILELAYERPARALLAXFACTOR,
+		VAR_TILELAYERSCROLLSPEED,
+		VAR_TILELAYERSCROLLPOS,
+		VAR_TILELAYERDEFORMATIONOFFSET,
+		VAR_TILELAYERDEFORMATIONOFFSETW,
+		VAR_HPARALLAXPARALLAXFACTOR,
+		VAR_HPARALLAXSCROLLSPEED,
+		VAR_HPARALLAXSCROLLPOS,
+		VAR_VPARALLAXPARALLAXFACTOR,
+		VAR_VPARALLAXSCROLLSPEED,
+		VAR_VPARALLAXSCROLLPOS,
+		VAR_SCENE3DVERTEXCOUNT,
+		VAR_SCENE3DFACECOUNT,
+		VAR_SCENE3DPROJECTIONX,
+		VAR_SCENE3DPROJECTIONY,
+		VAR_SCENE3DFOGCOLOR,
+		VAR_SCENE3DFOGSTRENGTH,
+		VAR_VERTEXBUFFERX,
+		VAR_VERTEXBUFFERY,
+		VAR_VERTEXBUFFERZ,
+		VAR_VERTEXBUFFERU,
+		VAR_VERTEXBUFFERV,
+		VAR_FACEBUFFERA,
+		VAR_FACEBUFFERB,
+		VAR_FACEBUFFERC,
+		VAR_FACEBUFFERD,
+		VAR_FACEBUFFERFLAG,
+		VAR_FACEBUFFERCOLOR,
+		VAR_SAVERAM,
+		VAR_ENGINESTATE,
+		VAR_ENGINELANGUAGE,
+		VAR_ENGINEONLINEACTIVE,
+		VAR_ENGINESFXVOLUME,
+		VAR_ENGINEBGMVOLUME,
+		VAR_ENGINETRIALMODE,
+		VAR_ENGINEDEVICETYPE,
+
+		// Extras
+		VAR_SCREENCURRENTID,
+		VAR_CAMERAENABLED,
+		VAR_CAMERATARGET,
+		VAR_CAMERASTYLE,
+		VAR_CAMERAXPOS,
+		VAR_CAMERAYPOS,
+		VAR_CAMERAADJUSTY,
+
+		// Haptics
+		VAR_HAPTICSENABLED,
+		VAR_MAX_CNT,
+
+		// v4 Old/v3
+		VAR_ENGINEMESSAGE,
+
+		// v3
+		VAR_PLAYERSTATE,
+		VAR_PLAYERCONTROLMODE,
+		VAR_PLAYERCONTROLLOCK,
+		VAR_PLAYERCOLLISIONMODE,
+		VAR_PLAYERCOLLISIONPLANE,
+		VAR_PLAYERXPOS,
+		VAR_PLAYERYPOS,
+		VAR_PLAYERIXPOS,
+		VAR_PLAYERIYPOS,
+		VAR_PLAYERSCREENXPOS,
+		VAR_PLAYERSCREENYPOS,
+		VAR_PLAYERSPEED,
+		VAR_PLAYERXVELOCITY,
+		VAR_PLAYERYVELOCITY,
+		VAR_PLAYERGRAVITY,
+		VAR_PLAYERANGLE,
+		VAR_PLAYERSKIDDING,
+		VAR_PLAYERPUSHING,
+		VAR_PLAYERTRACKSCROLL,
+		VAR_PLAYERUP,
+		VAR_PLAYERDOWN,
+		VAR_PLAYERLEFT,
+		VAR_PLAYERRIGHT,
+		VAR_PLAYERJUMPPRESS,
+		VAR_PLAYERJUMPHOLD,
+		VAR_PLAYERFOLLOWPLAYER1,
+		VAR_PLAYERLOOKPOS,
+		VAR_PLAYERWATER,
+		VAR_PLAYERTOPSPEED,
+		VAR_PLAYERACCELERATION,
+		VAR_PLAYERDECELERATION,
+		VAR_PLAYERAIRACCELERATION,
+		VAR_PLAYERAIRDECELERATION,
+		VAR_PLAYERGRAVITYSTRENGTH,
+		VAR_PLAYERJUMPSTRENGTH,
+		VAR_PLAYERJUMPCAP,
+		VAR_PLAYERROLLINGACCELERATION,
+		VAR_PLAYERROLLINGDECELERATION,
+		VAR_PLAYERENTITYNO,
+		VAR_PLAYERCOLLISIONLEFT,
+		VAR_PLAYERCOLLISIONTOP,
+		VAR_PLAYERCOLLISIONRIGHT,
+		VAR_PLAYERCOLLISIONBOTTOM,
+		VAR_PLAYERFLAILING,
+		VAR_PLAYERTIMER,
+		VAR_PLAYERTILECOLLISIONS,
+		VAR_PLAYEROBJECTINTERACTION,
+		VAR_PLAYERVISIBLE,
+		VAR_PLAYERROTATION,
+		VAR_PLAYERSCALE,
+		VAR_PLAYERPRIORITY,
+		VAR_PLAYERDRAWORDER,
+		VAR_PLAYERDIRECTION,
+		VAR_PLAYERINKEFFECT,
+		VAR_PLAYERALPHA,
+		VAR_PLAYERFRAME,
+		VAR_PLAYERANIMATION,
+		VAR_PLAYERPREVANIMATION,
+		VAR_PLAYERANIMATIONSPEED,
+		VAR_PLAYERANIMATIONTIMER,
+		VAR_PLAYERVALUE0,
+		VAR_PLAYERVALUE1,
+		VAR_PLAYERVALUE2,
+		VAR_PLAYERVALUE3,
+		VAR_PLAYERVALUE4,
+		VAR_PLAYERVALUE5,
+		VAR_PLAYERVALUE6,
+		VAR_PLAYERVALUE7,
+		VAR_PLAYERVALUE8,
+		VAR_PLAYERVALUE9,
+		VAR_PLAYERVALUE10,
+		VAR_PLAYERVALUE11,
+		VAR_PLAYERVALUE12,
+		VAR_PLAYERVALUE13,
+		VAR_PLAYERVALUE14,
+		VAR_PLAYERVALUE15,
+		VAR_PLAYEROUTOFBOUNDS,
+		VAR_STAGEACTIVEPLAYER,
+		VAR_ENGINEFRAMESKIPTIMER,
+		VAR_ENGINEFRAMESKIPSETTING,
+		VAR_ENGINEPLATFORMID,
+		VAR_KEYPRESSANYSTART,
+	}
+
+	enum CommonScrFunc
+	{
+		FUNC_END,
+		FUNC_EQUAL,
+		FUNC_ADD,
+		FUNC_SUB,
+		FUNC_INC,
+		FUNC_DEC,
+		FUNC_MUL,
+		FUNC_DIV,
+		FUNC_SHR,
+		FUNC_SHL,
+		FUNC_AND,
+		FUNC_OR,
+		FUNC_XOR,
+		FUNC_MOD,
+		FUNC_FLIPSIGN,
+		FUNC_CHECKEQUAL,
+		FUNC_CHECKGREATER,
+		FUNC_CHECKLOWER,
+		FUNC_CHECKNOTEQUAL,
+		FUNC_IFEQUAL,
+		FUNC_IFGREATER,
+		FUNC_IFGREATEROREQUAL,
+		FUNC_IFLOWER,
+		FUNC_IFLOWEROREQUAL,
+		FUNC_IFNOTEQUAL,
+		FUNC_ELSE,
+		FUNC_ENDIF,
+		FUNC_WEQUAL,
+		FUNC_WGREATER,
+		FUNC_WGREATEROREQUAL,
+		FUNC_WLOWER,
+		FUNC_WLOWEROREQUAL,
+		FUNC_WNOTEQUAL,
+		FUNC_LOOP,
+		FUNC_FOREACHACTIVE,
+		FUNC_FOREACHALL,
+		FUNC_NEXT,
+		FUNC_SWITCH,
+		FUNC_BREAK,
+		FUNC_ENDSWITCH,
+		FUNC_RAND,
+		FUNC_SIN,
+		FUNC_COS,
+		FUNC_SIN256,
+		FUNC_COS256,
+		FUNC_ATAN2,
+		FUNC_INTERPOLATE,
+		FUNC_INTERPOLATEXY,
+		FUNC_LOADSPRITESHEET,
+		FUNC_REMOVESPRITESHEET,
+		FUNC_DRAWSPRITE,
+		FUNC_DRAWSPRITEXY,
+		FUNC_DRAWSPRITESCREENXY,
+		FUNC_DRAWTINTRECT,
+		FUNC_DRAWNUMBERS,
+		FUNC_DRAWACTNAME,
+		FUNC_DRAWMENU,
+		FUNC_SPRITEFRAME,
+		FUNC_EDITFRAME,
+		FUNC_LOADPALETTE,
+		FUNC_ROTATEPALETTE,
+		FUNC_SETSCREENFADE,
+		FUNC_SETACTIVEPALETTE,
+		FUNC_SETPALETTEFADE,
+		FUNC_SETPALETTEENTRY,
+		FUNC_GETPALETTEENTRY,
+		FUNC_COPYPALETTE,
+		FUNC_CLEARSCREEN,
+		FUNC_DRAWSPRITEFX,
+		FUNC_DRAWSPRITESCREENFX,
+		FUNC_LOADANIMATION,
+		FUNC_SETUPMENU,
+		FUNC_ADDMENUENTRY,
+		FUNC_EDITMENUENTRY,
+		FUNC_LOADSTAGE,
+		FUNC_DRAWRECT,
+		FUNC_RESETOBJECTENTITY,
+		FUNC_BOXCOLLISIONTEST,
+		FUNC_CREATETEMPOBJECT,
+		FUNC_PROCESSOBJECTMOVEMENT,
+		FUNC_PROCESSOBJECTCONTROL,
+		FUNC_PROCESSANIMATION,
+		FUNC_DRAWOBJECTANIMATION,
+		FUNC_SETMUSICTRACK,
+		FUNC_PLAYMUSIC,
+		FUNC_STOPMUSIC,
+		FUNC_PAUSEMUSIC,
+		FUNC_RESUMEMUSIC,
+		FUNC_SWAPMUSICTRACK,
+		FUNC_PLAYSFX,
+		FUNC_STOPSFX,
+		FUNC_SETSFXATTRIBUTES,
+		FUNC_OBJECTTILECOLLISION,
+		FUNC_OBJECTTILEGRIP,
+		FUNC_NOT,
+		FUNC_DRAW3DSCENE,
+		FUNC_SETIDENTITYMATRIX,
+		FUNC_MATRIXMULTIPLY,
+		FUNC_MATRIXTRANSLATEXYZ,
+		FUNC_MATRIXSCALEXYZ,
+		FUNC_MATRIXROTATEX,
+		FUNC_MATRIXROTATEY,
+		FUNC_MATRIXROTATEZ,
+		FUNC_MATRIXROTATEXYZ,
+		FUNC_MATRIXINVERSE,
+		FUNC_TRANSFORMVERTICES,
+		FUNC_CALLFUNCTION,
+		FUNC_RETURN,
+		FUNC_SETLAYERDEFORMATION,
+		FUNC_CHECKTOUCHRECT,
+		FUNC_GETTILELAYERENTRY,
+		FUNC_SETTILELAYERENTRY,
+		FUNC_GETBIT,
+		FUNC_SETBIT,
+		FUNC_CLEARDRAWLIST,
+		FUNC_ADDDRAWLISTENTITYREF,
+		FUNC_GETDRAWLISTENTITYREF,
+		FUNC_SETDRAWLISTENTITYREF,
+		FUNC_GET16X16TILEINFO,
+		FUNC_SET16X16TILEINFO,
+		FUNC_COPY16X16TILE,
+		FUNC_GETANIMATIONBYNAME,
+		FUNC_READSAVERAM,
+		FUNC_WRITESAVERAM,
+		FUNC_LOADTEXTFILE,
+		FUNC_GETTEXTINFO,
+		FUNC_GETVERSIONNUMBER,
+		FUNC_GETTABLEVALUE,
+		FUNC_SETTABLEVALUE,
+		FUNC_CHECKCURRENTSTAGEFOLDER,
+		FUNC_ABS,
+		FUNC_CALLNATIVEFUNCTION,
+		FUNC_CALLNATIVEFUNCTION2,
+		FUNC_CALLNATIVEFUNCTION4,
+		FUNC_SETOBJECTRANGE,
+		FUNC_GETOBJECTVALUE,
+		FUNC_SETOBJECTVALUE,
+		FUNC_COPYOBJECT,
+		FUNC_PRINT,
+
+		// Extras
+		FUNC_CHECKCAMERAPROXIMITY,
+		FUNC_SETSCREENCOUNT,
+		FUNC_SETSCREENVERTICES,
+		FUNC_GETINPUTDEVICEID,
+		FUNC_GETFILTEREDINPUTDEVICEID,
+		FUNC_GETINPUTDEVICETYPE,
+		FUNC_ISINPUTDEVICEASSIGNED,
+		FUNC_ASSIGNINPUTSLOTTODEVICE,
+		FUNC_ISSLOTASSIGNED,
+		FUNC_RESETINPUTSLOTASSIGNMENTS,
+		FUNC_MAX_CNT,
+
+		// v4 Old/v3
+		FUNC_LOADTEXTFONT,
+		FUNC_DRAWTEXT,
+
+		//v3
+		FUNC_SINCHANGE,
+		FUNC_COSCHANGE,
+		FUNC_PLAYEROBJECTCOLLISION,
+		FUNC_BINDPLAYERTOOBJECT,
+		FUNC_PLAYERTILECOLLISION,
+		FUNC_PROCESSPLAYERCONTROL,
+		FUNC_DRAWPLAYERANIMATION,
+		FUNC_LOADVIDEO,
+		FUNC_NEXTVIDEOFRAME,
+		FUNC_PLAYSTAGESFX,
+		FUNC_STOPSTAGESFX,
+		FUNC_ENDFUNCTION,
+		FUNC_SETACHIEVEMENT,
+		FUNC_SETLEADERBOARD,
+		FUNC_LOADONLINEMENU,
+		FUNC_ENGINECALLBACK,
+	    FUNC_HAPTICEFFECT,
+	}
+}
