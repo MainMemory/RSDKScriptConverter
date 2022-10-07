@@ -19,6 +19,7 @@ namespace RSDKScriptConverter
 				Console.WriteLine("\tv3\tRSDKv3 RetroScript");
 				Console.WriteLine("\tv4\tRSDKv4 RetroScript");
 				Console.WriteLine("\tv4Old\tRSDKv4 RetroScript (old format)");
+				Console.WriteLine("\tC\tC code (output only)");
 			}
 			else
 			{
@@ -38,7 +39,7 @@ namespace RSDKScriptConverter
 						Console.WriteLine("Unknown input format {0}", args[0]);
 						return;
 				}
-				ScriptEngine dsteng;
+				ScriptEngine dsteng = null;
 				switch (args[1].ToLowerInvariant())
 				{
 					case "v3":
@@ -50,6 +51,18 @@ namespace RSDKScriptConverter
 					case "v4old":
 						dsteng = new ScriptEngineV4Old();
 						break;
+					case "c":
+						switch (args[0].ToLowerInvariant())
+						{
+							case "v3":
+								srceng = new ScriptEngineCV3();
+								break;
+							case "v4":
+							case "v4old":
+								dsteng = new ScriptEngineCV4();
+								break;
+						}
+						break;
 					default:
 						Console.WriteLine("Unknown output format {0}", args[1]);
 						return;
@@ -58,6 +71,8 @@ namespace RSDKScriptConverter
 				string outfile;
 				if (args.Length > 3)
 					outfile = args[3];
+				else if (args[1].Equals("c", StringComparison.OrdinalIgnoreCase))
+					outfile = infile;
 				else
 					outfile = $"{Path.ChangeExtension(infile, null)}_{args[1]}{Path.GetExtension(infile)}";
 				dsteng.WriteScript(outfile, srceng.ReadScript(infile));

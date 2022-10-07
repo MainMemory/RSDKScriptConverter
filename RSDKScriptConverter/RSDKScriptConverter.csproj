@@ -46,9 +46,11 @@
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="ScriptEngine.cs" />
+    <Compile Include="ScriptEngineCV3.cs" />
     <Compile Include="ScriptEngineV3.cs" />
     <Compile Include="ScriptEngineV4.cs" />
     <Compile Include="ScriptEngineV4Old.cs" />
+    <Compile Include="ScriptEngineCV4.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
