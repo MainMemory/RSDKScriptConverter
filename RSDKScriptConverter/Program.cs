@@ -55,7 +55,7 @@ namespace RSDKScriptConverter
 						switch (args[0].ToLowerInvariant())
 						{
 							case "v3":
-								srceng = new ScriptEngineCV3();
+								dsteng = new ScriptEngineCV3();
 								break;
 							case "v4":
 							case "v4old":
