@@ -826,7 +826,7 @@ namespace RSDKScriptConverter
 										}
 
 										if (compareOp != null)
-											line = new ScriptLineIf(compareOp, GetVarRef(scriptText.Substring(5, strPos - 5).Replace("(", "").Replace(")", "").Replace("=", "")), GetVarRef(scriptText.Substring(strPos + compareOp.Length).Replace("(", "").Replace(")", "").Replace("=", "")));
+											line = new ScriptLineWhile(compareOp, GetVarRef(scriptText.Substring(5, strPos - 5).Replace("(", "").Replace(")", "").Replace("=", "")), GetVarRef(scriptText.Substring(strPos + compareOp.Length).Replace("(", "").Replace(")", "").Replace("=", "")));
 									}
 									else if (scriptText.StartsWith("switch"))
 									{
