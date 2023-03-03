@@ -649,8 +649,11 @@ namespace RSDKScriptConverter
 								writer.Write(indent);
 							break;
 						case ScriptLineAlias alias:
-							if (!alias.Public)
-								writer.Write("#define {0} {1}", aliasfix[alias.Name], GetVarText(alias.Value, writer));
+							string aliasname = alias.Name.Replace('.', '_');
+							aliasfix.Add(alias.Name, aliasname);
+							if (IsObjectVar(alias.Value.Variable))
+								objaliases.Add(alias.Name, alias.Value);
+							writer.Write("#define {0} {1}", aliasname, GetVarText(alias.Value, writer));
 							break;
 						case ScriptLineObjectUpdate _:
 							writer.Write("void {0}_Main(struct Entity{0}* entity) {{", typename);
